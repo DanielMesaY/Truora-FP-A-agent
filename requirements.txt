@@ -1,0 +1,5 @@
+openpyxl>=3.1
+matplotlib>=3.7
+anthropic>=0.40        # paso IA con Claude
+# openai>=1.40         # alternativa OpenAI
+# supabase>=2.4        # persistencia

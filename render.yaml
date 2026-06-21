@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: truora-render
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements_service.txt
+    startCommand: gunicorn render_service:app
+    healthCheckPath: /health
