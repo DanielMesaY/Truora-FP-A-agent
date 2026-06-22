@@ -78,6 +78,37 @@ def _conclusion(figs, rev, eb, ni, m_eb, m_ni, ni_cum, k, base):
         c+="; la base operativa ya cubre el resultado"
     return f"{a}; {b}; {c}."
 
+_KEY_BOLD = {"apalancamiento","operativo","operativa","compresion","expansion","perdida",
+    "positiva","positivo","equilibrio","freno","deterioro","mejora","control","costos","referencia"}
+
+def _draw_rich(fig, concl, x0, x_right, y_top, fontsize, line_h, color="#1A1A1A"):
+    """Dibuja la conclusión palabra por palabra con ajuste de línea propio (no desborda)
+    y pone en NEGRITA solo las palabras clave: cifras (con dígitos) y términos analíticos."""
+    renderer = fig.canvas.get_renderer()
+    fw = fig.bbox.width
+    def _is_bold(tok):
+        if any(c.isdigit() for c in tok):
+            return True
+        a = "".join(ch for ch in tok.lower() if ch.isalpha())
+        for x,y in (("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u")):
+            a = a.replace(x,y)
+        return a in _KEY_BOLD
+    ta=fig.text(0,0,"a a",fontsize=fontsize); wa=ta.get_window_extent(renderer).width; ta.remove()
+    tb=fig.text(0,0,"aa",fontsize=fontsize);  wb=tb.get_window_extent(renderer).width; tb.remove()
+    space=(wa-wb)/fw
+    x=x0; y=y_top
+    for word in concl.split(" "):
+        if not word: continue
+        fw_=("bold" if _is_bold(word) else "normal")
+        t=fig.text(x,y,word,fontsize=fontsize,fontweight=fw_,va="top",ha="left",color=color)
+        wfrac=t.get_window_extent(renderer).width/fw
+        if x+wfrac>x_right and x>x0:
+            t.remove(); x=x0; y-=line_h
+            t=fig.text(x,y,word,fontsize=fontsize,fontweight=fw_,va="top",ha="left",color=color)
+            wfrac=t.get_window_extent(renderer).width/fw
+        x+=wfrac+space
+    return y
+
 def render_report(payload: dict, out_path: str) -> str:
     figs   = payload["figs"]
     labels = payload["labels"]
@@ -103,8 +134,8 @@ def render_report(payload: dict, out_path: str) -> str:
     sym={"positiva":("▲",GREEN),"negativa":("▼",RED),"neutra":("■",NAVY)}
 
     fig=plt.figure(figsize=(11.69,8.27),dpi=200); fig.patch.set_facecolor(BG)
-    gs=gridspec.GridSpec(4,4,figure=fig,height_ratios=[0.52,1,1,1],
-        hspace=0.62,wspace=0.30,left=0.045,right=0.975,top=0.805,bottom=0.05)
+    gs=gridspec.GridSpec(4,4,figure=fig,height_ratios=[0.66,1,1,1],
+        hspace=0.62,wspace=0.34,left=0.045,right=0.975,top=0.792,bottom=0.05)
 
     # ---- header ----
     hax=fig.add_axes([0,0.93,1,0.07]); hax.axis("off")
@@ -121,16 +152,15 @@ def render_report(payload: dict, out_path: str) -> str:
         bbox=dict(boxstyle="round,pad=0.5",fc=vbg,ec=vfg,lw=1.0))
 
     # ---- banda LECTURA PARA COMITÉ (conclusión analítica sintetizada de las cifras) ----
-    tax=fig.add_axes([0.045,0.838,0.93,0.078]); tax.axis("off")
-    tax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="round,pad=0,rounding_size=0.04",
+    tax=fig.add_axes([0.045,0.820,0.93,0.098]); tax.axis("off")
+    tax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="round,pad=0,rounding_size=0.035",
         fc="#F2F5FA",ec="#D2DAE8",lw=1,transform=tax.transAxes))
-    tax.text(0.013,0.86,"LECTURA PARA COMITÉ",fontsize=7,fontweight="bold",color=GOLD,va="top")
     icon,icol={"MEJORA":("▲",GREEN),"DETERIORO":("▼",RED),"LINEA_BASE":("■",NAVY)}.get(
         payload.get("verdict","LINEA_BASE"),("■",NAVY))
+    fig.text(0.057,0.911,"LECTURA PARA COMITÉ",fontsize=7,fontweight="bold",color=GOLD,va="top")
+    fig.text(0.057,0.890,icon,fontsize=9.5,color=icol,fontweight="bold",va="top")
     concl=_conclusion(figs,rev,eb,ni,m_eb,m_ni,ni_cum,k,base)
-    wrapped=textwrap.fill(concl,width=116)
-    tax.text(0.013,0.56,icon,fontsize=10,color=icol,fontweight="bold",va="top")
-    tax.text(0.035,0.59,wrapped,fontsize=8.0,color="#1A1A1A",va="top",fontweight="bold",linespacing=1.32)
+    _draw_rich(fig,concl,x0=0.076,x_right=0.958,y_top=0.892,fontsize=7.7,line_h=0.0178)
 
     # ---- KPIs con flecha direccional + MoM ----
     if base:
@@ -147,13 +177,13 @@ def render_report(payload: dict, out_path: str) -> str:
           ("Utilidad neta YTD",_fmt(ni_cum[-1]),"","Acumulado del año",NAVY,f"Margen prom. {avg:.1f}%")]
     for i,(t,v,a,d,c,sub) in enumerate(kpis):
         ax=fig.add_subplot(gs[0,i]); ax.axis("off")
-        ax.add_patch(FancyBboxPatch((0.02,0.05),0.96,0.9,
-            boxstyle="round,pad=0.02,rounding_size=0.06",fc=LGREY,ec="#D2DAE8",lw=1,
+        ax.add_patch(FancyBboxPatch((0.025,0.06),0.95,0.88,
+            boxstyle="round,pad=0.025,rounding_size=0.07",fc=LGREY,ec="#D2DAE8",lw=1,
             transform=ax.transAxes))
-        ax.text(0.08,0.80,t.upper(),fontsize=6.6,color=GREY,fontweight="bold",va="center")
-        ax.text(0.08,0.50,v,fontsize=16,color=NAVY,fontweight="bold",va="center")
-        ax.text(0.08,0.24,f"{a} {d}".strip(),fontsize=7.2,color=c,fontweight="bold",va="center")
-        ax.text(0.08,0.09,sub,fontsize=6.1,color=GREY,va="center")
+        ax.text(0.11,0.83,t.upper(),fontsize=6.8,color=GREY,fontweight="bold",va="center")
+        ax.text(0.11,0.55,v,fontsize=18,color=NAVY,fontweight="bold",va="center")
+        ax.text(0.11,0.29,f"{a} {d}".strip(),fontsize=7.4,color=c,fontweight="bold",va="center")
+        ax.text(0.11,0.13,sub,fontsize=6.3,color=GREY,va="center")
 
     def style(ax,title):
         ax.set_title(title,fontsize=8.2,fontweight="bold",color=NAVY,loc="left",pad=5)
@@ -174,18 +204,18 @@ def render_report(payload: dict, out_path: str) -> str:
 
     # ---- chart 2: márgenes (TODOS los puntos etiquetados; leyenda con valor actual) ----
     ax2=fig.add_subplot(gs[1,2:4])
-    series=[(m_gp,PURPLE,"Bruto"),(m_eb,BLUE,"EBITDA"),(m_op,GREEN,"Operac."),(m_ni,RED,"Neto")]
+    series=[(m_gp,PURPLE,"Bruto"),(m_eb,BLUE,"EBITDA"),(m_ni,RED,"Neto")]
     for ser,col,lab in series:
-        ax2.plot(labels,ser,"-o",ms=2.6,lw=1.5,color=col,label=f"{lab} {ser[k]:.1f}%")
+        ax2.plot(labels,ser,"-o",ms=2.8,lw=1.6,color=col,label=f"{lab} {ser[k]:.1f}%")
         for i,v in enumerate(ser):
-            off=5 if v>=0 else -8
+            off=6 if v>=0 else -9
             ax2.annotate(f"{v:.1f}",(i,v),textcoords="offset points",xytext=(0,off),
-                ha="center",fontsize=lblfs-0.8,color=col,fontweight="bold")
+                ha="center",fontsize=lblfs-0.4,color=col,fontweight="bold")
     ax2.axhline(0,color="#B0B7C3",lw=.8,ls="--"); style(ax2,"Evolución de márgenes (%)")
     ax2.set_ylim(-12,54)
-    ax2.legend(loc="upper center",ncol=4,fontsize=5.8,frameon=True,edgecolor="#D2DAE8",
-        facecolor="white",framealpha=.95,columnspacing=0.8,handlelength=1.1,
-        handletextpad=0.35,borderpad=0.35,bbox_to_anchor=(0.5,1.03))
+    ax2.legend(loc="upper center",ncol=3,fontsize=6.4,frameon=True,edgecolor="#D2DAE8",
+        facecolor="white",framealpha=.95,columnspacing=1.1,handlelength=1.3,
+        handletextpad=0.4,borderpad=0.4,bbox_to_anchor=(0.5,1.03))
 
     # ---- chart 3: EBITDA vs NI (cada barra etiquetada) ----
     ax3=fig.add_subplot(gs[2,0:2]); w=0.4
@@ -232,7 +262,7 @@ def render_report(payload: dict, out_path: str) -> str:
         levels.append(cum)
     for i in range(len(steps)-1):                                  # conectores punteados
         axW.plot([i+0.32,i+1-0.32],[levels[i],levels[i]],color="#9AA3B2",lw=0.7,ls=(0,(2,2)),zorder=2)
-    span=fc_["ingresos"]-min(0,min(levels))
+    span=fc_["ingresos"]-min(0,min(levels)); ing=fc_["ingresos"] or 1
     cum=0
     for i,(lab,val,kind) in enumerate(steps):
         if kind=="tot":
@@ -245,10 +275,13 @@ def render_report(payload: dict, out_path: str) -> str:
         else:      y,va,dy=lo,"top",-3
         axW.annotate(txt,(i,y),textcoords="offset points",xytext=(0,dy),
             ha="center",va=va,fontsize=lblfs-0.7,color=col,fontweight="bold")
+        # % de ingresos (estructura de costos del P&G) — debajo del monto, gris
+        axW.annotate(f"{val/ing*100:.0f}%",(i,y),textcoords="offset points",
+            xytext=(0,dy+(9 if dy>0 else -9)),ha="center",va=va,fontsize=lblfs-1.8,color=GREY)
     axW.axhline(0,color="#9AA3B2",lw=.9)
-    style(axW,"Cascada del Estado de Resultados (mes)")
+    style(axW,"Cascada del P&G — monto y % de ingresos")
     axW.set_xticks(xs); axW.set_xticklabels([s[0] for s in steps],fontsize=5.3)
-    axW.set_ylim(min(0,min(levels))-span*0.14, fc_["ingresos"]*1.16)
+    axW.set_ylim(min(0,min(levels))-span*0.20, fc_["ingresos"]*1.24)
 
     # ---- chart 4: acumulada (todos los puntos etiquetados) ----
     ax4=fig.add_subplot(gs[3,0:2])
