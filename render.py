@@ -15,6 +15,12 @@ payload = {
   "anotaciones": [ {"tipo":"positiva|negativa|neutra", "texto": "..."} ]
 }
 La IA produce `verdict` y `anotaciones`. Todo lo demás sale de los datos (Supabase).
+
+Diseño orientado a comité ejecutivo:
+  - Banda "Lectura para comité" con el driver principal del mes.
+  - Veredicto como pill de color (semántica verde/rojo/azul).
+  - KPI cards con flecha direccional y variación MoM.
+  - Data labels en TODAS las series (barras y puntos): no hay que leer ejes.
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -23,13 +29,14 @@ from matplotlib import gridspec
 from matplotlib.patches import FancyBboxPatch
 import textwrap
 
-NAVY="#1F3864"; BLUE="#2E5FAC"; ACC="#4A90D9"; GREEN="#2E8B57"; RED="#C0392B"
-GREY="#6B7280"; LGREY="#E8ECF3"; BG="#FFFFFF"
+NAVY="#1F3864"; BLUE="#2E5FAC"; ACC="#4A90D9"; GREEN="#1E7A46"; RED="#C0392B"
+PURPLE="#8E44AD"; GREY="#6B7280"; LGREY="#E8ECF3"; BG="#FFFFFF"; GOLD="#B8860B"
 plt.rcParams.update({"font.family":"DejaVu Sans","font.size":8,
     "axes.edgecolor":"#C9D2E0","axes.linewidth":.8,
     "xtick.color":GREY,"ytick.color":GREY,"text.color":"#1A1A1A"})
 
 def _fmt(v): return f"{v:,.0f}".replace(",", ".")
+def _signed(v): return ("+" if v >= 0 else "") + f"{v:,.0f}".replace(",", ".")
 
 def render_report(payload: dict, out_path: str) -> str:
     figs   = payload["figs"]
@@ -46,48 +53,68 @@ def render_report(payload: dict, out_path: str) -> str:
     m_ni=[f["margen_neto"]*100 for f in figs]
     ni_cum=[sum(ni[:i+1]) for i in range(len(ni))]
     idx=list(range(k+1))
+    densa = k > 6                          # serie larga -> fuentes/labels más compactos
 
-    vmap={"MEJORA":("MEJORA","white"),"DETERIORO":("DETERIORO","#F5B7B1"),
-          "LINEA_BASE":("LÍNEA BASE","#C7D4EC")}
-    verdict_txt,vcol=vmap.get(payload.get("verdict","LINEA_BASE"),("LÍNEA BASE","#C7D4EC"))
+    # veredicto -> (texto, color de texto, color de fondo del pill)
+    vmap={"MEJORA":("MEJORA",GREEN,"#D5F0E0"),
+          "DETERIORO":("DETERIORO",RED,"#F8D7D2"),
+          "LINEA_BASE":("LÍNEA BASE",NAVY,"#D5E0F2")}
+    verdict_txt,vfg,vbg=vmap.get(payload.get("verdict","LINEA_BASE"),("LÍNEA BASE",NAVY,"#D5E0F2"))
+    notas=payload.get("anotaciones",[])
+    sym={"positiva":("▲",GREEN),"negativa":("▼",RED),"neutra":("■",NAVY)}
 
     fig=plt.figure(figsize=(11.69,8.27),dpi=200); fig.patch.set_facecolor(BG)
-    gs=gridspec.GridSpec(3,4,figure=fig,height_ratios=[0.62,1.25,1.25],
-        hspace=0.5,wspace=0.34,left=0.045,right=0.975,top=0.885,bottom=0.06)
+    gs=gridspec.GridSpec(3,4,figure=fig,height_ratios=[0.60,1.22,1.22],
+        hspace=0.55,wspace=0.34,left=0.045,right=0.975,top=0.815,bottom=0.065)
 
     # ---- header ----
     hax=fig.add_axes([0,0.93,1,0.07]); hax.axis("off")
     hax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="square,pad=0",fc=NAVY,ec="none",
         transform=hax.transAxes))
-    hax.text(0.045,0.58,payload["compania"],color="white",fontsize=15,
+    hax.text(0.045,0.60,payload["compania"],color="white",fontsize=15,
         fontweight="bold",va="center")
-    hax.text(0.045,0.2,f"Reporte Financiero Mensual (FP&A)  ·  Acumulado a {payload['mes']}",
+    hax.text(0.045,0.22,
+        f"Reporte Financiero Mensual (FP&A)  ·  Acumulado a {payload['mes']}  ·  Cifras en COP millones",
         color="#C7D4EC",fontsize=8.5,va="center")
-    hax.text(0.965,0.58,verdict_txt,color=vcol,fontsize=12,fontweight="bold",
-        ha="right",va="center")
-    hax.text(0.965,0.2,"Cifras en COP millones",color="#C7D4EC",fontsize=7.5,
-        ha="right",va="center")
+    # pill de veredicto
+    hax.add_patch(FancyBboxPatch((0.828,0.30),0.137,0.40,
+        boxstyle="round,pad=0.01,rounding_size=0.9",fc=vbg,ec="none",transform=hax.transAxes))
+    hax.text(0.8965,0.50,verdict_txt,color=vfg,fontsize=10.5,fontweight="bold",
+        ha="center",va="center")
 
-    # ---- KPIs ----
+    # ---- banda LECTURA PARA COMITÉ (driver principal = 1ª anotación) ----
+    tax=fig.add_axes([0.045,0.858,0.93,0.055]); tax.axis("off")
+    tax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="round,pad=0,rounding_size=0.05",
+        fc="#F2F5FA",ec="#D2DAE8",lw=1,transform=tax.transAxes))
+    tax.text(0.013,0.74,"LECTURA PARA COMITÉ",fontsize=7,fontweight="bold",color=GOLD,va="center")
+    if notas:
+        s,c=sym.get(notas[0].get("tipo","neutra"),("■",NAVY))
+        head=textwrap.fill(notas[0]["texto"],width=118)
+        tax.text(0.013,0.30,s,fontsize=9,color=c,fontweight="bold",va="center")
+        tax.text(0.038,0.30,head,fontsize=8.7,color="#1A1A1A",va="center",fontweight="bold")
+
+    # ---- KPIs con flecha direccional + MoM ----
     if base:
-        d_rev=d_eb="Mes base"; cR=cE=GREY
+        d_rev=d_eb=d_ni="Mes base"; cR=cE=cN=GREY; aR=aE=aN=""
     else:
-        rp=(rev[k]/rev[k-1]-1)*100; ep=(eb[k]/eb[k-1]-1)*100
-        d_rev=f"{'+' if rp>=0 else ''}{rp:.1f}% MoM"; d_eb=f"{'+' if ep>=0 else ''}{ep:.1f}% MoM"
-        cR=GREEN if rp>=0 else RED; cE=GREEN if ep>=0 else RED
+        rp=(rev[k]/rev[k-1]-1)*100; ep=(eb[k]/eb[k-1]-1)*100; nd=ni[k]-ni[k-1]
+        d_rev=f"{rp:+.1f}% MoM"; d_eb=f"{ep:+.1f}% MoM"; d_ni=f"{_signed(nd)} MoM"
+        cR=GREEN if rp>=0 else RED; cE=GREEN if ep>=0 else RED; cN=GREEN if nd>=0 else RED
+        aR="▲" if rp>=0 else "▼"; aE="▲" if ep>=0 else "▼"; aN="▲" if nd>=0 else "▼"
     avg=sum(ni)/sum(rev)*100
-    kpis=[("Ingresos del mes",_fmt(rev[k]),d_rev,cR),
-          ("EBITDA del mes",_fmt(eb[k]),d_eb,cE),
-          ("Utilidad neta del mes",_fmt(ni[k]),f"Margen {m_ni[k]:.1f}%",GREEN if ni[k]>=0 else RED),
-          ("Utilidad neta YTD",_fmt(ni_cum[-1]),f"Margen prom. {avg:.1f}%",NAVY)]
-    for i,(t,v,d,c) in enumerate(kpis):
+    kpis=[("Ingresos del mes",_fmt(rev[k]),aR,d_rev,cR,f"Margen bruto {m_gp[k]:.1f}%"),
+          ("EBITDA del mes",_fmt(eb[k]),aE,d_eb,cE,f"Margen EBITDA {m_eb[k]:.1f}%"),
+          ("Utilidad neta del mes",_fmt(ni[k]),aN,d_ni,cN,f"Margen neto {m_ni[k]:.1f}%"),
+          ("Utilidad neta YTD",_fmt(ni_cum[-1]),"","Acumulado del año",NAVY,f"Margen prom. {avg:.1f}%")]
+    for i,(t,v,a,d,c,sub) in enumerate(kpis):
         ax=fig.add_subplot(gs[0,i]); ax.axis("off")
         ax.add_patch(FancyBboxPatch((0.02,0.05),0.96,0.9,
             boxstyle="round,pad=0.02,rounding_size=0.06",fc=LGREY,ec="#D2DAE8",lw=1,
             transform=ax.transAxes))
-        ax.text(0.08,0.74,t.upper(),fontsize=7,color=GREY,fontweight="bold",va="center")
-        ax.text(0.08,0.42,v,fontsize=17,color=NAVY,fontweight="bold",va="center")
-        ax.text(0.08,0.16,d,fontsize=7.5,color=c,fontweight="bold",va="center")
+        ax.text(0.08,0.80,t.upper(),fontsize=6.8,color=GREY,fontweight="bold",va="center")
+        ax.text(0.08,0.50,v,fontsize=17,color=NAVY,fontweight="bold",va="center")
+        ax.text(0.08,0.24,f"{a} {d}".strip(),fontsize=7.4,color=c,fontweight="bold",va="center")
+        ax.text(0.08,0.10,sub,fontsize=6.3,color=GREY,va="center")
 
     def style(ax,title):
         ax.set_title(title,fontsize=8.5,fontweight="bold",color=NAVY,loc="left",pad=6)
@@ -95,62 +122,77 @@ def render_report(payload: dict, out_path: str) -> str:
         ax.grid(axis="y",color="#EEF1F6",lw=.8); ax.tick_params(length=0,labelsize=7)
         ax.set_axisbelow(True)
 
-    # ---- chart 1: ingresos ----
+    lblfs = 5.2 if densa else 6.4          # tamaño de los data labels
+
+    # ---- chart 1: ingresos (TODAS las barras etiquetadas) ----
     ax1=fig.add_subplot(gs[1,0:2])
     bars=ax1.bar(labels,rev,color=ACC,width=0.62,zorder=3); bars[k].set_color(NAVY)
-    style(ax1,"Evolución de ingresos mensuales"); ax1.set_ylim(0,max(rev)*1.20)
+    style(ax1,"Evolución de ingresos mensuales"); ax1.set_ylim(0,max(rev)*1.22)
     if k<2: ax1.set_xlim(-1.5,1.5)
-    ax1.text(k,rev[k]+max(rev)*0.03,_fmt(rev[k]),ha="center",fontsize=6.8,
-        color=NAVY,fontweight="bold")
+    for i,v in enumerate(rev):
+        ax1.text(i,v+max(rev)*0.025,_fmt(v),ha="center",fontsize=lblfs,
+            color=NAVY if i==k else GREY,fontweight="bold")
 
-    # ---- chart 2: márgenes ----
+    # ---- chart 2: márgenes (TODOS los puntos etiquetados; leyenda con valor actual) ----
     ax2=fig.add_subplot(gs[1,2:4])
-    for ser,col,lab in [(m_gp,"#8E44AD","Bruto"),(m_eb,BLUE,"EBITDA"),
-                        (m_op,GREEN,"Operacional"),(m_ni,RED,"Neto")]:
-        ax2.plot(labels,ser,"-o",ms=3,lw=1.6,color=col,label=lab)
+    series=[(m_gp,PURPLE,"Bruto"),(m_eb,BLUE,"EBITDA"),(m_op,GREEN,"Operacional"),(m_ni,RED,"Neto")]
+    for ser,col,lab in series:
+        ax2.plot(labels,ser,"-o",ms=3,lw=1.6,color=col,label=f"{lab} · {ser[k]:.1f}%")
+        for i,v in enumerate(ser):
+            off=6 if v>=0 else -9
+            ax2.annotate(f"{v:.1f}",(i,v),textcoords="offset points",xytext=(0,off),
+                ha="center",fontsize=lblfs-0.6,color=col,fontweight="bold")
     ax2.axhline(0,color="#B0B7C3",lw=.8,ls="--"); style(ax2,"Evolución de márgenes (%)")
-    ax2.set_ylim(-6,42)
-    ax2.legend(loc="center right",fontsize=6.0,frameon=True,edgecolor="#D2DAE8",
-        facecolor="white",framealpha=.92)
-    loss=[i for i in idx if ni[i]<0]
-    if loss:
-        li=loss[0]
-        ax2.annotate("Pérdida",xy=(li,m_ni[li]),xytext=(min(li+1.4,k+0.2),-4.5),
-            fontsize=6.2,color=RED,ha="center",
-            arrowprops=dict(arrowstyle="->",color=RED,lw=.9))
+    ax2.set_ylim(-10,50)
+    ax2.legend(loc="upper center",ncol=4,fontsize=6.0,frameon=True,edgecolor="#D2DAE8",
+        facecolor="white",framealpha=.95,columnspacing=1.0,handlelength=1.3,
+        handletextpad=0.4,borderpad=0.4,bbox_to_anchor=(0.5,1.02))
 
-    # ---- chart 3: EBITDA vs NI ----
+    # ---- chart 3: EBITDA vs NI (cada barra etiquetada) ----
     ax3=fig.add_subplot(gs[2,0:2]); w=0.4
-    ax3.bar([i-w/2 for i in idx],eb,w,color=BLUE,label="EBITDA",zorder=3)
-    ax3.bar([i+w/2 for i in idx],ni,w,color="#9CB8E0",label="Utilidad neta",zorder=3)
+    b_eb=ax3.bar([i-w/2 for i in idx],eb,w,color=BLUE,label="EBITDA",zorder=3)
+    b_ni=ax3.bar([i+w/2 for i in idx],ni,w,color="#9CB8E0",label="Utilidad neta",zorder=3)
     ax3.axhline(0,color="#9AA3B2",lw=.9); ax3.set_xticks(idx); ax3.set_xticklabels(labels)
     if k<2: ax3.set_xlim(-1.5,1.5)
     style(ax3,"EBITDA vs. Utilidad neta por mes")
-    ax3.legend(loc="upper left",fontsize=6.6,frameon=False)
+    ax3.legend(loc="upper left",fontsize=6.6,frameon=False,ncol=2)
+    rng=max(max(eb),max(ni,default=0))-min(0,min(ni))
+    for i in idx:
+        ax3.text(i-w/2,eb[i]+rng*0.02,_fmt(eb[i]),ha="center",va="bottom",
+            fontsize=lblfs-0.6,color=BLUE,fontweight="bold")
+        va,off=("bottom",rng*0.02) if ni[i]>=0 else ("top",-rng*0.02)
+        ax3.text(i+w/2,ni[i]+off,_fmt(ni[i]),ha="center",va=va,
+            fontsize=lblfs-0.6,color=(GREEN if ni[i]>=0 else RED),fontweight="bold")
+    ax3.margins(y=0.18)
 
-    # ---- chart 4: acumulada ----
+    # ---- chart 4: acumulada (todos los puntos etiquetados) ----
     ax4=fig.add_subplot(gs[2,2])
     ax4.fill_between(labels,ni_cum,color=NAVY,alpha=0.12,zorder=2)
     ax4.plot(labels,ni_cum,"-o",ms=3,lw=1.8,color=NAVY,zorder=3)
     style(ax4,"Utilidad neta acumulada (YTD)")
-    ax4.tick_params(axis="x",labelsize=5.6 if k>6 else 7)
-    ax4.text(k,ni_cum[-1],f" {_fmt(ni_cum[-1])}",fontsize=7,color=NAVY,
-        fontweight="bold",va="center")
+    ax4.tick_params(axis="x",labelsize=5.6 if densa else 7)
+    rng4=(max(ni_cum)-min(ni_cum)) or 1
+    for i,v in enumerate(ni_cum):
+        va,off=("bottom",rng4*0.05) if (i==0 or v>=ni_cum[i-1]) else ("top",-rng4*0.05)
+        ax4.annotate(_fmt(v),(i,v),textcoords="offset points",
+            xytext=(0,5 if va=="bottom" else -5),ha="center",va=va,
+            fontsize=lblfs-0.4,color=NAVY,fontweight="bold")
+    ax4.margins(y=0.20)
 
-    # ---- notas (de la IA) ----
+    # ---- notas de soporte (anotaciones 2..5) ----
     axN=fig.add_subplot(gs[2,3]); axN.axis("off")
     axN.add_patch(FancyBboxPatch((0.0,0.0),1,1,boxstyle="round,pad=0.02,rounding_size=0.04",
         fc="#F7F9FC",ec="#D2DAE8",lw=1,transform=axN.transAxes))
-    axN.text(0.07,0.93,"NOTAS DEL ANÁLISIS",fontsize=7.5,fontweight="bold",color=NAVY,va="top")
-    sym={"positiva":("▲",GREEN),"negativa":("▼",RED),"neutra":("•",NAVY)}
-    y=0.85
-    for nota in payload.get("anotaciones",[])[:5]:
-        s,c=sym.get(nota.get("tipo","neutra"),("•",NAVY))
+    axN.text(0.07,0.93,"SOPORTE DEL ANÁLISIS",fontsize=7.5,fontweight="bold",color=NAVY,va="top")
+    soporte = notas[1:] if len(notas) > 1 else notas
+    y=0.84
+    for nota in soporte[:4]:
+        s,c=sym.get(nota.get("tipo","neutra"),("■",NAVY))
         wrapped=textwrap.fill(nota["texto"],width=38)
         nlines=wrapped.count("\n")+1
-        axN.text(0.07,y,s,fontsize=8,color=c,fontweight="bold",va="top")
-        axN.text(0.15,y,wrapped,fontsize=6.3,color="#2A2A2A",va="top",linespacing=1.3)
-        y-=nlines*0.050+0.030
+        axN.text(0.07,y,s,fontsize=7.5,color=c,fontweight="bold",va="top")
+        axN.text(0.16,y,wrapped,fontsize=6.4,color="#2A2A2A",va="top",linespacing=1.32)
+        y-=nlines*0.058+0.040
 
     fig.text(0.045,0.022,"Compañía sintética · Datos ficticios para pruebas de agente de IA",
         fontsize=6.3,color="#9AA3B2")
