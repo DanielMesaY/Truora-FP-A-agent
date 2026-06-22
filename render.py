@@ -38,6 +38,42 @@ plt.rcParams.update({"font.family":"DejaVu Sans","font.size":8,
 def _fmt(v): return f"{v:,.0f}".replace(",", ".")
 def _signed(v): return ("+" if v >= 0 else "") + f"{v:,.0f}".replace(",", ".")
 
+def _conclusion(figs, rev, eb, ni, m_eb, m_ni, ni_cum, k, base):
+    """Dictamen ejecutivo sintetizado de las cifras (determinístico, sin alucinaciones):
+    cruza ingresos + dinámica de margen + rentabilidad + trayectoria YTD + principal freno."""
+    f = figs[k]
+    if base:
+        return (f"Mes base: ingresos COP {_fmt(rev[k])}M, EBITDA COP {_fmt(eb[k])}M "
+                f"(margen {m_eb[k]:.1f}%) y utilidad neta COP {_fmt(ni[k])}M (margen {m_ni[k]:.1f}%). "
+                f"Fija la referencia para la trayectoria; las comparaciones MoM aplican desde el próximo período.")
+    rmom=(rev[k]/rev[k-1]-1)*100; epp=m_eb[k]-m_eb[k-1]; nid=ni[k]-ni[k-1]; ytd=ni_cum[-1]
+    rdir="Ingresos al alza" if rmom>=0 else "Ingresos a la baja"
+    if rmom>=0 and epp>=0:
+        a=(f"{rdir} ({rmom:+.1f}% MoM a COP {_fmt(rev[k])}M) y margen EBITDA en expansión "
+           f"({epp:+.1f}pp a {m_eb[k]:.1f}%) confirman apalancamiento operativo")
+    elif rmom>=0 and epp<0:
+        a=(f"{rdir} ({rmom:+.1f}% MoM a COP {_fmt(rev[k])}M) pero con margen EBITDA en compresión "
+           f"({epp:+.1f}pp a {m_eb[k]:.1f}%): el volumen no se traduce en rentabilidad")
+    elif rmom<0 and epp>=0:
+        a=(f"{rdir} ({rmom:+.1f}% MoM a COP {_fmt(rev[k])}M), atenuados por un margen EBITDA en mejora "
+           f"({epp:+.1f}pp a {m_eb[k]:.1f}%) vía control de costos")
+    else:
+        a=(f"{rdir} ({rmom:+.1f}% MoM a COP {_fmt(rev[k])}M) y margen EBITDA en deterioro "
+           f"({epp:+.1f}pp a {m_eb[k]:.1f}%) presionan el resultado")
+    ndir="mejora" if nid>=0 else "se reduce"
+    if ni[k]>=0 and ni[k-1]<0: nst="y se vuelve positiva"
+    elif ni[k]>=0:             nst="y se mantiene positiva"
+    else:                      nst="aunque sigue en pérdida"
+    b=f"la utilidad neta {ndir} COP {_fmt(abs(nid))}M {nst} (COP {_fmt(ni[k])}M, margen {m_ni[k]:.1f}%)"
+    c=(f"el acumulado YTD ya es positivo (COP {_fmt(ytd)}M)" if ytd>=0
+       else f"el acumulado YTD sigue negativo (COP {_fmt(ytd)}M)")
+    nfin=f["ingresos_fin"]+f["gastos_fin"]
+    if f["ebit"]>0 and f["uai"]<0:
+        c+=f", con la carga financiera neta (COP {_fmt(nfin)}M) como principal freno"
+    elif ni[k]>=0:
+        c+="; la base operativa ya cubre el resultado"
+    return f"{a}; {b}; {c}."
+
 def render_report(payload: dict, out_path: str) -> str:
     figs   = payload["figs"]
     labels = payload["labels"]
@@ -65,7 +101,7 @@ def render_report(payload: dict, out_path: str) -> str:
 
     fig=plt.figure(figsize=(11.69,8.27),dpi=200); fig.patch.set_facecolor(BG)
     gs=gridspec.GridSpec(3,4,figure=fig,height_ratios=[0.60,1.22,1.22],
-        hspace=0.55,wspace=0.34,left=0.045,right=0.975,top=0.815,bottom=0.065)
+        hspace=0.55,wspace=0.34,left=0.045,right=0.975,top=0.79,bottom=0.065)
 
     # ---- header ----
     hax=fig.add_axes([0,0.93,1,0.07]); hax.axis("off")
@@ -82,16 +118,17 @@ def render_report(payload: dict, out_path: str) -> str:
     hax.text(0.8965,0.50,verdict_txt,color=vfg,fontsize=10.5,fontweight="bold",
         ha="center",va="center")
 
-    # ---- banda LECTURA PARA COMITÉ (driver principal = 1ª anotación) ----
-    tax=fig.add_axes([0.045,0.858,0.93,0.055]); tax.axis("off")
-    tax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="round,pad=0,rounding_size=0.05",
+    # ---- banda LECTURA PARA COMITÉ (conclusión analítica sintetizada de las cifras) ----
+    tax=fig.add_axes([0.045,0.835,0.93,0.082]); tax.axis("off")
+    tax.add_patch(FancyBboxPatch((0,0),1,1,boxstyle="round,pad=0,rounding_size=0.04",
         fc="#F2F5FA",ec="#D2DAE8",lw=1,transform=tax.transAxes))
-    tax.text(0.013,0.74,"LECTURA PARA COMITÉ",fontsize=7,fontweight="bold",color=GOLD,va="center")
-    if notas:
-        s,c=sym.get(notas[0].get("tipo","neutra"),("■",NAVY))
-        head=textwrap.fill(notas[0]["texto"],width=118)
-        tax.text(0.013,0.30,s,fontsize=9,color=c,fontweight="bold",va="center")
-        tax.text(0.038,0.30,head,fontsize=8.7,color="#1A1A1A",va="center",fontweight="bold")
+    tax.text(0.013,0.87,"LECTURA PARA COMITÉ",fontsize=7,fontweight="bold",color=GOLD,va="top")
+    icon,icol={"MEJORA":("▲",GREEN),"DETERIORO":("▼",RED),"LINEA_BASE":("■",NAVY)}.get(
+        payload.get("verdict","LINEA_BASE"),("■",NAVY))
+    concl=_conclusion(figs,rev,eb,ni,m_eb,m_ni,ni_cum,k,base)
+    wrapped=textwrap.fill(concl,width=116)
+    tax.text(0.013,0.58,icon,fontsize=10,color=icol,fontweight="bold",va="top")
+    tax.text(0.035,0.61,wrapped,fontsize=8.1,color="#1A1A1A",va="top",fontweight="bold",linespacing=1.34)
 
     # ---- KPIs con flecha direccional + MoM ----
     if base:
@@ -184,7 +221,7 @@ def render_report(payload: dict, out_path: str) -> str:
     axN.add_patch(FancyBboxPatch((0.0,0.0),1,1,boxstyle="round,pad=0.02,rounding_size=0.04",
         fc="#F7F9FC",ec="#D2DAE8",lw=1,transform=axN.transAxes))
     axN.text(0.07,0.93,"SOPORTE DEL ANÁLISIS",fontsize=7.5,fontweight="bold",color=NAVY,va="top")
-    soporte = notas[1:] if len(notas) > 1 else notas
+    soporte = notas
     y=0.84
     for nota in soporte[:4]:
         s,c=sym.get(nota.get("tipo","neutra"),("■",NAVY))
