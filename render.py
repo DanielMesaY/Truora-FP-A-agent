@@ -212,10 +212,10 @@ def render_report(payload: dict, out_path: str) -> str:
             ax2.annotate(f"{v:.1f}",(i,v),textcoords="offset points",xytext=(0,off),
                 ha="center",fontsize=lblfs-0.4,color=col,fontweight="bold")
     ax2.axhline(0,color="#B0B7C3",lw=.8,ls="--"); style(ax2,"Evolución de márgenes (%)")
-    ax2.set_ylim(-12,54)
+    ax2.set_ylim(-12,66)                               # banda vacía arriba para la leyenda
     ax2.legend(loc="upper center",ncol=3,fontsize=6.4,frameon=True,edgecolor="#D2DAE8",
         facecolor="white",framealpha=.95,columnspacing=1.1,handlelength=1.3,
-        handletextpad=0.4,borderpad=0.4,bbox_to_anchor=(0.5,1.03))
+        handletextpad=0.4,borderpad=0.4,bbox_to_anchor=(0.5,1.0))
 
     # ---- chart 3: EBITDA vs NI (cada barra etiquetada) ----
     ax3=fig.add_subplot(gs[2,0:2]); w=0.4
